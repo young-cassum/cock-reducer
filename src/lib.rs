@@ -16,6 +16,8 @@ impl Default for Plugin {
             params: Arc::new(PluginParameters {
                 samples_to_average: AtomicUsize::new(5),
             }),
+            // State contains variables needed for processing a buffer of audio
+            // They are put here to avoid doing memory allocation on the audio thread
             state: State {
                 started: false,
                 recent_samples: Default::default(),
@@ -38,6 +40,24 @@ struct State {
 impl vst::prelude::Plugin for Plugin {
     fn new(_host: vst::prelude::HostCallback) -> Self {
         Default::default()
+    }
+
+    fn get_parameter_object(&mut self) -> Arc<dyn vst::prelude::PluginParameters> {
+        Arc::clone(&self.params) as Arc<dyn vst::prelude::PluginParameters>
+    }
+
+    fn get_info(&self) -> vst::prelude::Info {
+        vst::prelude::Info {
+            name: "Cock reducer".to_string(),
+            unique_id: 666420, // used by hosts to differentiate between plugins
+            category: vst::prelude::Category::Effect,
+
+            inputs: 2,
+            outputs: 2,
+            parameters: 1,
+
+            ..Default::default()
+        }
     }
 
     fn process(&mut self, buffer: &mut AudioBuffer<f32>) {
@@ -73,23 +93,26 @@ impl vst::prelude::Plugin for Plugin {
             }
         }
     }
+}
 
-    fn get_parameter_object(&mut self) -> Arc<dyn vst::prelude::PluginParameters> {
-        Arc::clone(&self.params) as Arc<dyn vst::prelude::PluginParameters>
-    }
+#[cfg(test)]
+mod plugin_tests {
+    use super::*;
 
-    fn get_info(&self) -> vst::prelude::Info {
-        vst::prelude::Info {
-            name: "VST".to_string(),
-            unique_id: 666420, // used by hosts to differentiate between plugins
-            category: vst::prelude::Category::Effect,
+    #[test]
+    fn test_process() {
+        let plugin = Plugin {
+            params: Arc::new(PluginParameters {
+                samples_to_average: AtomicUsize::new(5),
+            }),
+            state: State {
+                started: false,
+                recent_samples: vec![1., 2., 3., 4., 5.],
+                recent_samples_copy: vec![],
+            },
+        };
 
-            inputs: 2,
-            outputs: 2,
-            parameters: 1,
-
-            ..Default::default()
-        }
+        plugin.process()
     }
 }
 
@@ -103,7 +126,7 @@ impl vst::prelude::PluginParameters for PluginParameters {
 
     fn get_parameter_name(&self, index: i32) -> String {
         match index {
-            0 => "Samples to average",
+            0 => "Cock reduction",
             _ => "",
         }
         .to_string()
@@ -126,6 +149,92 @@ impl vst::prelude::PluginParameters for PluginParameters {
                     Ordering::Relaxed,
                 );
             }
+        }
+    }
+}
+
+#[cfg(test)]
+mod parameters_tests {
+    use super::*;
+    use vst::plugin::PluginParameters;
+
+    const PLUGIN_PARAMETERS: super::PluginParameters = super::PluginParameters {
+        samples_to_average: AtomicUsize::new(5),
+    };
+
+    #[test]
+    fn get_parameter_test() {
+        assert_eq!(5., PLUGIN_PARAMETERS.get_parameter(0));
+    }
+
+    #[quickcheck_macros::quickcheck]
+    fn can_only_get_parameter_zero(index: i32) {
+        if index != 0 {
+            assert_eq!(0., PLUGIN_PARAMETERS.get_parameter(index));
+        }
+    }
+
+    #[test]
+    fn get_parameter_name_test() {
+        assert_eq!("Cock reduction", PLUGIN_PARAMETERS.get_parameter_name(0));
+    }
+
+    #[quickcheck_macros::quickcheck]
+    fn can_only_get_parameter_name_zero(index: i32) {
+        if index != 0 {
+            assert_eq!("", PLUGIN_PARAMETERS.get_parameter_name(index));
+        }
+    }
+
+    #[test]
+    fn get_parameter_text_test() {
+        assert_eq!("5", PLUGIN_PARAMETERS.get_parameter_text(0));
+    }
+
+    #[quickcheck_macros::quickcheck]
+    fn can_only_get_parameter_text_zero(index: i32) {
+        if index != 0 {
+            assert_eq!("", PLUGIN_PARAMETERS.get_parameter_text(index));
+        }
+    }
+
+    #[test]
+    fn set_parameter_test() {
+        let parameters = super::PluginParameters {
+            samples_to_average: AtomicUsize::new(5),
+        };
+
+        parameters.set_parameter(0, 3.);
+
+        assert_eq!(100., parameters.get_parameter(0));
+
+        parameters.set_parameter(0, 1.);
+
+        assert_eq!(100., parameters.get_parameter(0));
+
+        parameters.set_parameter(0, 0.5);
+
+        assert_eq!(50., parameters.get_parameter(0));
+
+        parameters.set_parameter(0, 0.01);
+
+        assert_eq!(1., parameters.get_parameter(0));
+
+        parameters.set_parameter(0, 0.);
+
+        assert_eq!(1., parameters.get_parameter(0));
+    }
+
+    #[quickcheck_macros::quickcheck]
+    fn can_only_set_parameter_zero(index: i32, value: f32) {
+        if index != 0 {
+            let parameters = super::PluginParameters {
+                samples_to_average: AtomicUsize::new(5),
+            };
+
+            parameters.set_parameter(index, value);
+
+            assert_eq!(0., PLUGIN_PARAMETERS.get_parameter(index));
         }
     }
 }

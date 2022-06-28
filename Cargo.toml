@@ -8,5 +8,9 @@ edition = "2021"
 [dependencies]
 vst = "0.3"
 
+[dev-dependencies]
+quickcheck = "1.0.3"
+quickcheck_macros = "1.0.0"
+
 [lib]
 crate-type = ["dylib"]
